@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/icon16.png</file>
+        <file>icons/icon32.png</file>
+        <file>icons/icon64.png</file>
+        <file>icons/icon128.png</file>
+    </qresource>
+    <qresource prefix="/images">
+        <file>frog.gif</file>
+    </qresource>
+</RCC>

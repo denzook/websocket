@@ -1,0 +1,33 @@
+#include "winver.h"
+
+IDI_ICON		ICON    "icons\icon64.ico"
+IDI_MEDIUM       ICON            "icons\icon32.ico"
+IDI_SMALL       ICON            "icons\icon16.ico"
+
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,1,0,0
+ FILEFLAGS 0x0L
+ FILEFLAGSMASK 0x3fL
+ FILEOS 0x00040004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "000004b0"
+        BEGIN
+            VALUE "FileDescription", "Websocket"
+            VALUE "FileVersion", "1.0.0.0"
+            VALUE "InternalName", "Websocket"
+            VALUE "OriginalFilename", "Websocket.exe"
+            VALUE "ProductName", "Websocket socket to socket xfer"
+            VALUE "ProductVersion", "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0, 1200
+    END
+END

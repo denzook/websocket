@@ -1,0 +1,374 @@
+#include <QApplication>
+#include <QMetaMethod>
+#include "echoserver.h"
+
+EchoServer::EchoServer(int port)
+    : QObject(NULL), inPort (port), server(this)
+{
+    connect(&server, SIGNAL(newConnection()), this, SLOT(newConnections()));
+}
+
+bool EchoServer::addAccepts(const QHostAddress &addr, const QHostAddress &outAddr, int outPort)
+{
+    QString a;
+    QMap<QString,info>::iterator found;
+
+    bool result=false;
+    if((found = accepts.find(a=addr.toString())) != accepts.end())
+    {
+        if(found->addr.isEqual(outAddr) && found->port == outPort) result= true;
+        //return false;
+    }
+    else
+    {
+        found = accepts.insert(a,info (outAddr, outPort));
+        found->target=nullptr;
+        found->heartbeat.start();
+        result=true;
+    }
+
+    return result;
+}
+
+void EchoServer::remove(QHostAddress addr) // public
+{
+    QString a;
+    QMap<QString,info>::iterator found;
+
+    if((found = accepts.find(a=addr.toString())) != accepts.end())
+    {
+        if(found->target) {
+            while (!found->socket.isEmpty())
+            {
+                QTcpSocket *socket = found->socket.first();
+                socket->close();
+                socket->deleteLater();
+            }
+        }
+        accepts.erase(found);
+    }
+}
+
+bool EchoServer::isEmpty() // public
+{
+    bool empty;
+    empty = accepts.isEmpty();
+    return empty;
+}
+
+
+int EchoServer::getPort() // public
+{
+    return this->inPort;
+}
+
+bool EchoServer::listen() // public
+{
+//    if(thread && QThread::currentThread() != QObject::thread())
+//    {
+//        QMetaObject::invokeMethod(this, "listen", Qt::QueuedConnection);
+//        return false;
+//    }
+    if(!server.isListening() && !server.listen(QHostAddress(QHostAddress::Any), inPort))
+    {
+        return false;
+    }
+    return true;
+}
+
+QString EchoServer::getServerError() // public
+{
+    return server.errorString();
+}
+
+static QString getIPv4(const QHostAddress &a)
+{
+    QString s = a.toString();
+    return s.mid(s.lastIndexOf(":")+1);
+}
+
+void EchoServer::remove(QMap<QString,info>::iterator found)
+{
+    SocketThread *target = found->target;
+    if(target)
+    {
+        found->target = nullptr;
+        target->close();
+        target->deleteLater();
+    }
+    QHostAddress oAddr = found->addr; int oPort = found->port;
+    QString key = found.key();
+    accepts.erase(found);
+    emit disconnected(key, this->inPort, getIPv4(oAddr), oPort);
+}
+
+int EchoServer::getElapsed(QHostAddress addr) // public
+{
+    QMap<QString,info>::iterator found;
+    int elapsed = -1;
+    if((found = accepts.find(addr.toString())) != accepts.end())
+    {
+        elapsed = found->heartbeat.elapsed();
+    }
+    return elapsed;
+}
+
+void EchoServer::newConnections()
+{
+    QTcpSocket *socket;
+    while(server.hasPendingConnections())
+    {
+        socket = server.nextPendingConnection();
+
+        QMap<QString,info>::iterator found;
+
+        if((found = accepts.find(getIPv4(socket->peerAddress()))) == accepts.end() &&
+           (found = accepts.find(QHostAddress(QHostAddress::Any).toString())) == accepts.end()
+            )
+        {
+            socket->close();
+            socket->deleteLater();
+            continue;
+        }
+
+        if(!found->target)
+        {
+            QString key = found.key();
+            SocketThread *target = new SocketThread();
+//            nsocket = new QTcpSocket(target);
+//            nsocket->connectToHost(socket->peerAddress(), socket->peerPort());
+//            if(!nsocket->waitForConnected())
+//            {
+//                qInfo("cannot connect - %s", nsocket->errorString().toUtf8().constData());
+//                socket->close();
+//                socket->deleteLater();
+//                continue;
+//            }
+            auto func = [key,this](){ accepts.find(key)->heartbeat.restart(); };
+            connect(target,&SocketThread::receive, this, func);
+            connect(target,&SocketThread::transfer, this, func);
+
+//            connect(target, &SocketThread::disconnectTarget, this,[target](){
+//                //QMap<QString,info>::iterator found = accepts.find(key);
+//                qInfo() << QString("Target disconnect @ %1")   .arg(target->getHostAddr());
+//            });
+            connect(target, &SocketThread::connectFail, this,[key, this](){
+                qInfo ("connect failsddd");
+                QMap<QString,info>::iterator found = accepts.find(key);
+                qInfo() << QString("Connection fail @ %1 : %2").arg(found->addr.toString())
+                                                               .arg(found->port);
+                if(found->target) found->target->close();
+            });
+            connect(target, static_cast<void(SocketThread::*)(QTcpSocket*)>(&SocketThread::closeSocket),
+                    this,[this](QTcpSocket *socket){
+               socket->close();
+            });
+
+//            QMap<QString,info>::iterator found = accepts.find(key);
+//                QList <QTcpSocket*> *sockets = &found->socket;
+//                QTcpSocket* target = found->target;
+
+//                found->target = NULL;
+//                for(QTcpSocket *socket : *sockets)
+//                {
+//                    socket->close();
+//                }
+//                QHostAddress oAddr = found->addr; int oPort = found->port;
+//                accepts.erase(found);
+//                emit disconnected(key, this->inPort, getIPv4(oAddr), oPort);
+
+//            });
+
+//            target->connectToHost(found->addr, found->port);
+
+//            if(!target->waitForConnected())
+//            {
+//                target->deleteLater();
+//                socket->close();
+//                socket->deleteLater();
+//                QHostAddress oAddr = found->addr; int oPort = found->port;
+//                accepts.erase(found);
+//                emit disconnected(key, this->inPort, getIPv4(oAddr), oPort);
+//                continue;
+//            }
+//            sockets->push_back(socket);
+//            found->target = target;
+//            heartbeat->restart();
+
+//            connect(socket, &QTcpSocket::readyRead, this,
+//                    [socket, target, heartbeat](){
+//                QByteArray data = socket->readAll();
+//                target->write(data.data(), data.length());
+//                heartbeat->restart();
+//            });
+
+            connect(socket, &QTcpSocket::disconnected,
+                    this, [key, this](){
+                QMap<QString,info>::iterator found = accepts.find(key);
+                QList<QTcpSocket*>*sockets = &found->socket;
+                QTcpSocket*socket = static_cast<QTcpSocket*>(this->sender());
+                if(sockets->removeAll(socket))
+                {
+                    found->target->removeSocket(socket);
+                    socket->deleteLater();
+                    if(sockets->isEmpty())
+                    {
+                        remove(found);
+                    }
+                }
+                qInfo()<<QString("Remove %1").arg(getIPv4(socket->peerAddress()));
+            });
+            found->target = target;
+            target->start(found->addr, found->port);
+        }
+
+        if(found->target->addSocket(socket))
+        {
+            found->socket.push_back(socket);
+            emit connected(getIPv4(found->addr), found->port, socket);
+        }
+        else
+        {
+            socket->close();
+            socket->deleteLater();
+        }
+    }
+}
+
+void EchoServer::close()
+{
+    for(QMap<QString,info>::iterator it = accepts.begin();it != accepts.end();)
+    {
+        SocketThread *target = it->target;
+        if(target) target->deleteLater();
+    }
+    accepts.clear();
+    server.close();
+}
+
+
+EchoServer::~EchoServer()
+{
+    close();
+}
+
+
+/////////////////////////////////////////////////////////////////////////
+
+
+SocketThread::SocketThread()  : rThread(this), target(this),
+    lockSocket(QMutex::Recursive)
+{
+    qRegisterMetaType<QHostAddress>("QHostAddress");
+    closing = false;
+
+    connect(&target, &QTcpSocket::readyRead, this,[this](){
+        QByteArray data = target.readAll();
+        bool xfer = false;
+        lockSocket.lock();
+        foreach(QTcpSocket *socket, sockets)
+        {
+            qInfo ("read receive");
+            socket->write(data.data(), data.length());
+            qInfo ("read receive2");
+        }
+        lockSocket.unlock();
+        if(xfer) emit receive();
+        //heartbeat->restart();
+    });
+    connect(&target, &QTcpSocket::disconnected, this,[this](){
+        targetCleanup();
+        emit disconnectTarget();
+    });
+}
+
+void SocketThread::targetCleanup()
+{
+    if(closing) return;
+    lockSocket.lock();
+    closing = true;
+    foreach(QTcpSocket *socket,sockets)
+    {
+        closeSocket(socket);
+    }
+    sockets.clear();
+    lockSocket.unlock();
+}
+
+void SocketThread::removeSocket(QTcpSocket *socket)
+{
+    lockSocket.lock();
+    sockets.removeAll(socket);
+    lockSocket.unlock();
+}
+
+bool SocketThread::addSocket(QTcpSocket *socket)
+{
+    bool result = false;
+    lockSocket.lock();
+    if(closing) goto end;
+    sockets.push_back(socket);
+    connect(socket, &QTcpSocket::readyRead, this, [socket,this](){
+        qInfo ("read xfer");
+        QByteArray data = socket->readAll();
+        qInfo ("read xfer2");
+
+        target.write(data.data(), data.length());
+        emit transfer();
+    });
+    result = true;
+end:
+    lockSocket.unlock();
+    return result;
+}
+
+void SocketThread::start(const QHostAddress &addr, int port, bool useThread)
+{
+    if(useThread && !rThread.isRunning())
+    {
+        this->moveToThread(&rThread);
+        rThread.start();
+    }
+    qInfo ("ssssssxcc %s, %d, %p",addr.toString().toUtf8().constData(), useThread, QThread::currentThread());
+    if(QThread::currentThread() != QObject::thread())
+    {
+        QMetaObject::invokeMethod(this,"start", Q_ARG(QHostAddress, addr),
+                                                Q_ARG(int, port),
+                                                Q_ARG(bool, false)
+                                  );
+        return;
+    }
+    closing = false;
+    target.connectToHost(addr, port);
+    if(!target.waitForConnected(1000))
+    {
+        emit connectFail();
+    }
+    else target.setTextModeEnabled(false);
+}
+
+void SocketThread::close(QThread *thread)
+{
+    if(QThread::currentThread() != QObject::thread())
+    {
+        QMetaObject::invokeMethod(this,"close",Qt::BlockingQueuedConnection,Q_ARG(QThread*, thread));
+        this->rThread.quit();
+        this->rThread.wait();
+        return;
+    }
+    if(target.state() != QAbstractSocket::ConnectedState)
+    {
+        targetCleanup();
+    }
+    else if(!closing)
+    {
+        target.close();
+    }
+
+    if(thread != QThread::currentThread()) moveToThread(thread);
+}
+
+SocketThread::~SocketThread()
+{
+    close();
+}

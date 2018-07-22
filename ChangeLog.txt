@@ -1,0 +1,8 @@
+Version 1.1.0
+Date: Wed 18 Jul 2018 <zeroforce0n@gmail.com>
+
+- Add systray for minimize
+- Change to multithreading for tcp server
+- Change title to WebSocket
+
+Version  1.0.0

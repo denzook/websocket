@@ -1,0 +1,116 @@
+#ifndef ECHOSERVER_H
+#define ECHOSERVER_H
+
+#include <QObject>
+#include <QTime>
+#include <QTcpServer>
+#include <QTcpSocket>
+
+#include <QThread>
+#include <QMutex>
+
+#include <QHostAddress>
+
+class SocketThread  : public QObject
+{
+    Q_OBJECT
+    QThread rThread;
+    QTcpSocket target;
+    QList<QTcpSocket *>sockets;
+    bool closing;
+
+    void targetCleanup();
+
+
+public:
+    QMutex lockSocket;
+
+    SocketThread();
+
+    QHostAddress getHostAddr() { return target.peerAddress(); }
+    QThread *getThread() { return &rThread; }
+    bool isClosing() {
+        bool temp;
+        lockSocket.lock();
+        temp = closing;
+        lockSocket.unlock();
+        return temp;
+    }
+    bool addSocket(QTcpSocket *socket);
+    void removeSocket(QTcpSocket *socket);
+
+    ~SocketThread();
+signals:
+    void transfer();
+    void receive();
+    void connectFail();
+    void closeSocket(QTcpSocket *);
+    void disconnectTarget();
+
+public slots:
+    void start(const QHostAddress &addr, int port, bool useThread=true);
+    void close(QThread *thread = QThread::currentThread());
+
+private slots:
+
+};
+
+
+class EchoServer : public QObject
+{
+    Q_OBJECT
+
+    int inPort;
+
+    QTcpServer server;
+    QString errorMsg;
+
+
+    struct info
+    {
+        QHostAddress addr;
+        int port;
+
+        QList<QTcpSocket *>socket;
+        SocketThread *target;
+
+        QTime heartbeat;
+
+        info (QHostAddress addr, int port)
+        { this->addr = addr; this->port = port;
+            target = new SocketThread();
+            target->start(addr, port);
+        }
+    };
+
+    QMap<QString,info> accepts;
+    void remove(QMap<QString,info>::iterator found);
+
+public:
+    ~EchoServer();
+
+    bool listen();
+    bool addAccepts(const QHostAddress &addr, const QHostAddress &outAddr, int outPort);
+    void remove(QHostAddress addr);
+    bool isEmpty();
+    QString getServerError();
+    int getPort();
+    int getElapsed(QHostAddress addr);
+
+    explicit EchoServer(int port);
+
+
+signals:
+    void failListen();
+    void failAccept();
+    void cmdComplete();
+    void connected(const QString &addr, int port, QTcpSocket *target);
+    void disconnected(const QString &addr, int inport, const QString &out, int outport);
+
+private slots:
+    void newConnections();
+    void close();
+
+};
+
+#endif // ECHOSERVER_H
